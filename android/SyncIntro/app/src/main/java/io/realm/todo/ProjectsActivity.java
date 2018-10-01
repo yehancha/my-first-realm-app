@@ -2,86 +2,73 @@ package io.realm.todo;
 
 import android.content.Intent;
 import android.os.Bundle;
+import android.support.annotation.Nullable;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
-import android.support.v7.widget.helper.ItemTouchHelper;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.EditText;
 
+import java.util.Date;
+import java.util.UUID;
+
 import io.realm.Realm;
+import io.realm.RealmResults;
 import io.realm.Sort;
 import io.realm.SyncUser;
-import io.realm.todo.model.Item;
 import io.realm.todo.model.Project;
-import io.realm.todo.ui.ItemsRecyclerAdapter;
+import io.realm.todo.ui.ProjectsRecyclerAdapter;
 
-public class ItemsActivity extends AppCompatActivity {
-
+public class ProjectsActivity extends AppCompatActivity {
     private Realm realm;
 
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_items);
 
         setSupportActionBar(findViewById(R.id.toolbar));
 
-        String projectId = getIntent().getStringExtra("project_id");
-
         findViewById(R.id.fab).setOnClickListener(view -> {
             View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_task, null);
             EditText taskText = dialogView.findViewById(R.id.task);
-            new AlertDialog.Builder(ItemsActivity.this)
-                    .setTitle("Add a new task")
-                    .setMessage("What do you want to do next?")
+            new AlertDialog.Builder(ProjectsActivity.this)
+                    .setTitle("Add a new project")
                     .setView(dialogView)
                     .setPositiveButton("Add", (dialog, which) -> realm.executeTransactionAsync(realm -> {
-                        Item item = new Item();
-                        item.setBody(taskText.getText().toString());
-                        realm.where(Project.class).equalTo("id", projectId).findFirst().getTasks().add(item);
+                        Project project = new Project();
+                        String userId = SyncUser.current().getIdentity();
+                        String name = taskText.getText().toString();
+
+                        project.setId(UUID.randomUUID().toString());
+                        project.setOwner(userId);
+                        project.setName(name);
+                        project.setTimestamp(new Date());
+
+                        realm.insert(project);
                     }))
                     .setNegativeButton("Cancel", null)
                     .create()
                     .show();
         });
 
+        // using the current SyncUser#id, perform a partial query to obtain
+        // only projects belonging to this SyncUser.
         realm = Realm.getDefaultInstance();
-        Project project = realm.where(Project.class).equalTo("id", projectId).findFirst();
+        RealmResults<Project> projects = realm
+                .where(Project.class)
+                .equalTo("owner", SyncUser.current().getIdentity())
+                .sort("timestamp", Sort.DESCENDING)
+                .findAllAsync();
 
-        setTitle(project.getName());
-        final ItemsRecyclerAdapter itemsRecyclerAdapter = new ItemsRecyclerAdapter(project.getTasks().sort("timestamp", Sort.ASCENDING));
+        final ProjectsRecyclerAdapter itemsRecyclerAdapter = new ProjectsRecyclerAdapter(this, projects);
         RecyclerView recyclerView = findViewById(R.id.recycler_view);
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
         recyclerView.setAdapter(itemsRecyclerAdapter);
-
-        ItemTouchHelper.SimpleCallback simpleItemTouchCallback = new ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.LEFT | ItemTouchHelper.RIGHT) {
-
-            @Override
-            public boolean onMove(RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder, RecyclerView.ViewHolder target) {
-                return false;
-            }
-
-            @Override
-            public void onSwiped(RecyclerView.ViewHolder viewHolder, int swipeDir) {
-                int position = viewHolder.getAdapterPosition();
-                String id = itemsRecyclerAdapter.getItem(position).getItemId();
-                realm.executeTransactionAsync(realm -> {
-                    Item item = realm.where(Item.class).equalTo("itemId", id)
-                            .findFirst();
-                    if (item != null) {
-                        item.deleteFromRealm();
-                    }
-                });
-            }
-        };
-
-        ItemTouchHelper itemTouchHelper = new ItemTouchHelper(simpleItemTouchCallback);
-        itemTouchHelper.attachToRecyclerView(recyclerView);
     }
 
     @Override
