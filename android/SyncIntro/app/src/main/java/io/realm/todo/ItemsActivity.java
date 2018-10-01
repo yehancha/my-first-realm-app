@@ -40,7 +40,6 @@ import io.realm.todo.model.Item;
 import io.realm.todo.ui.ItemsRecyclerAdapter;
 
 public class ItemsActivity extends AppCompatActivity {
-    private List<Item> items = new ArrayList<>();
     private Realm realm;
 
     @Override
@@ -60,7 +59,9 @@ public class ItemsActivity extends AppCompatActivity {
                     .setPositiveButton("Add", (dialog, which) -> {
                         Item item = new Item();
                         item.setBody(taskText.getText().toString());
-                        items.add(item);
+                        realm.executeTransactionAsync(realm -> {
+                            realm.insert(item);
+                        });
                     })
                     .setNegativeButton("Cancel", null)
                     .create()
@@ -89,12 +90,14 @@ public class ItemsActivity extends AppCompatActivity {
             public void onSwiped(RecyclerView.ViewHolder viewHolder, int swipeDir) {
                 int position = viewHolder.getAdapterPosition();
                 String id = itemsRecyclerAdapter.getItem(position).getItemId();
-                for (Item item : items) {
-                    if (item.getItemId() == id) {
-                        items.remove(item);
-                        break;
+                realm.executeTransactionAsync(realm -> {
+                    Item item = realm.where(Item.class)
+                            .equalTo("itemId", id)
+                            .findFirst();
+                    if (item != null) {
+                        item.deleteFromRealm();
                     }
-                }
+                });
             }
         };
 
