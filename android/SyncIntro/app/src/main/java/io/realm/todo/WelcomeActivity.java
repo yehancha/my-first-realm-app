@@ -28,6 +28,10 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 
+import io.realm.ObjectServerError;
+import io.realm.SyncCredentials;
+import io.realm.SyncUser;
+
 public class WelcomeActivity extends AppCompatActivity {
 
     private EditText mNicknameTextView;
@@ -37,14 +41,20 @@ public class WelcomeActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_welcome);
 
-        // Set up the login form.
-        mNicknameTextView = findViewById(R.id.nickname);
-        Button loginButton = findViewById(R.id.login_button);
-        loginButton.setOnClickListener(view -> attemptLogin());
-        mLoginFormView = findViewById(R.id.login_form);
-        mProgressView = findViewById(R.id.login_progress);
+        if (SyncUser.current() != null) {
+            goToItemsActivity();
+            finish();
+        } else {
+            setContentView(R.layout.activity_welcome);
+
+            // Set up the login form.
+            mNicknameTextView = findViewById(R.id.nickname);
+            Button loginButton = findViewById(R.id.login_button);
+            loginButton.setOnClickListener(view -> attemptLogin());
+            mLoginFormView = findViewById(R.id.login_form);
+            mProgressView = findViewById(R.id.login_progress);
+        }
     }
 
     private void attemptLogin() {
@@ -54,7 +64,22 @@ public class WelcomeActivity extends AppCompatActivity {
         String nickname = mNicknameTextView.getText().toString();
         showProgress(true);
 
-        goToItemsActivity();
+        SyncCredentials credentials = SyncCredentials.nickname(nickname, false);
+        SyncUser.logInAsync(credentials, Constants.AUTH_URL, new SyncUser.Callback<SyncUser>() {
+            @Override
+            public void onSuccess(SyncUser user) {
+                showProgress(false);
+                goToItemsActivity();
+            }
+
+            @Override
+            public void onError(ObjectServerError error) {
+                showProgress(false);
+                mNicknameTextView.setError("Uh oh something went wrong! (check your logcat please)");
+                mNicknameTextView.requestFocus();
+                Log.e("Login error", error.toString());
+            }
+        });
     }
 
     /**
